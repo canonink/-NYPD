@@ -1,0 +1,205 @@
+---
+title: "NYPD Shooting Incident"
+author: "Coursera"
+date: "2023-01-31"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Below are the steps which I have used to analyse and visualise the data
+
+## Include library
+
+I start off by using the following libraries.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+## Import CSV file
+
+Start by importing the data. I am using the same folder as my NYPD Shooting Incident Data
+
+```{r}
+nypd <- read.csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+## Change the data type to date
+
+Change the nypd date to MM/DD/YYYY format
+
+```{r}
+nypd <- nypd %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+## Change boolean to int
+
+Convert the STATISTICAL_MURDER_FLAG from char to int.
+
+```{r}
+nypd$STATISTICAL_MURDER_FLAG [nypd$STATISTICAL_MURDER_FLAG == "true"] <- 1
+
+nypd$STATISTICAL_MURDER_FLAG [nypd$STATISTICAL_MURDER_FLAG == "false"] <- 0
+
+nypd$STATISTICAL_MURDER_FLAG <- as.integer(nypd$STATISTICAL_MURDER_FLAG)
+```
+
+## Select only "OCCUR_DATE", "BORO", "VIC_RACE", "STATISTICAL_MURDER_FLAG"
+
+Select only the following columns.
+
+```{r}
+nypd_1 <- nypd[c("OCCUR_DATE", "BORO", "VIC_RACE", "STATISTICAL_MURDER_FLAG")]
+```
+
+## Start of Visualising data
+
+Start off by finding the frequency of the occurrence.
+
+```{r}
+nypd_2 <- nypd_1 %>% 
+  group_by(VIC_RACE, BORO, OCCUR_DATE, STATISTICAL_MURDER_FLAG) %>%
+  summarise(Frequency=n())
+
+nypd_2
+```
+
+## Total Number of Shootings by Year
+
+```{r}
+nypd_year_shooting <- nypd_2 %>% 
+  group_by(year = lubridate::floor_date(OCCUR_DATE, 'year')) %>% 
+  summarise(NY_total = sum(Frequency)) %>% 
+  select(year, NY_total) %>% ungroup()
+
+ggplot(data = nypd_year_shooting, mapping = aes(x=year, y=NY_total)) +
+  geom_bar(stat='identity') +  geom_text(aes(label=NY_total), vjust=-0.25)
+
+```
+
+## Total Number of Murders by Year
+
+```{r}
+nypd_year_murder <- nypd_2 %>% 
+  group_by(year = lubridate::floor_date(OCCUR_DATE, 'year')) %>% 
+  summarise(NY_Murder = sum(STATISTICAL_MURDER_FLAG)) %>% 
+  select(year, NY_Murder) %>% ungroup()
+
+ggplot(data = nypd_year_murder, mapping = aes(x=year, y=NY_Murder)) +
+  geom_bar(stat='identity') +  geom_text(aes(label=NY_Murder), vjust=-0.25)
+```
+
+## Split data according to race
+
+Now we find the data for race and visualise the result of
+
+```{r}
+nypd_race <- nypd_2 %>% 
+  group_by(VIC_RACE, Month = lubridate::floor_date(OCCUR_DATE, 'month')) %>% 
+  summarise(NY_total = sum(Frequency), NY_murder = sum(STATISTICAL_MURDER_FLAG)) %>% 
+  mutate(NY_deaths_rate = NY_murder/NY_total) %>% 
+  select(VIC_RACE, Month, NY_total, NY_murder, NY_deaths_rate) %>% ungroup()
+```
+
+We subsequently filter by race. For this example, I will be selecting the white hispanic.
+
+```{r}
+race_select <- "WHITE HISPANIC"
+
+nypd_race %>% filter(VIC_RACE == race_select) %>% 
+  filter(NY_total > 0) %>% 
+  ggplot(aes(x = Month, y = NY_total)) + 
+  geom_line(aes(color = "NY_total")) + 
+  geom_point(aes(color = "NY_total")) + 
+  geom_line(aes(y = NY_murder, color = "NY_murder")) + 
+  geom_point(aes(color = "NY_murder")) + 
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  labs(title = str_c("NYPD total shootings and murder of ", race_select), y = NULL)
+```
+
+From the visual, there seems to be a trend. When the total number of shootings increases, the total number of murder also increases.
+
+## Split data according to boro
+
+In the next example, I will find the data for boro and use Bronx as the example.
+
+```{r}
+nypd_boro <- nypd_2 %>% 
+  group_by(BORO, Month = lubridate::floor_date(OCCUR_DATE, 'month')) %>% 
+  summarise(NY_total = sum(Frequency), NY_murder = sum(STATISTICAL_MURDER_FLAG)) %>% 
+  mutate(NY_deaths_rate = NY_murder/NY_total) %>% 
+  select(BORO, Month, NY_total, NY_murder, NY_deaths_rate) %>% 
+  ungroup()
+
+boro_select <- "BRONX"
+
+nypd_boro %>% 
+  filter(BORO == boro_select) %>% 
+  filter(NY_total > 0) %>% 
+  ggplot(aes(x = Month, y = NY_total)) + 
+  geom_line(aes(color = "NY_total")) + 
+  geom_point(aes(color = "NY_total")) + 
+  geom_line(aes(y = NY_murder, color = "NY_murder")) + 
+  geom_point(aes(color = "NY_murder")) + 
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  labs(title = str_c("NYPD total shootings and murder in ", boro_select), y = NULL)
+
+```
+
+From the visual, there seems to be a trend. When the total number of shootings increases, the total number of murder also increases. From 2020 onward, when there was an increase in number of shootings, the number of murder also increases.
+
+## Analyse data for boro
+
+I also want to show the breakdown of each shooting by boro.
+
+```{r}
+nypd_boro_total <- nypd_boro %>% group_by(BORO) %>% 
+  summarise(NY_total = sum(NY_total), NY_murder = sum(NY_murder)) %>%
+  filter(NY_total > 0, NY_murder > 0)
+```
+
+```{r}
+ggplot(data = nypd_boro_total, mapping = aes(x=BORO, y=NY_total)) + 
+  geom_bar(stat='identity')
+```
+
+From the data itself, it shows that Brooklyn has the most number of shootings. At the same time, Staten Island has the least number of shootings.
+
+Despite the data as shown, we would need the rate over the population to determine if the numbers are truly high as we did not account for the population size.
+
+## Model data
+
+Next, I will analyse the data. First, I will be getting the summary of results.
+
+```{r}
+mod <- lm(NY_murder~NY_total, nypd_boro) 
+summary(mod)
+```
+
+Lastly, I will be using my results to make predictions.
+
+```{r}
+nypd_total_w_pred <- nypd_boro %>% mutate(pred = predict(mod))
+nypd_total_w_pred %>% 
+  ggplot() + 
+  geom_point(aes(x = NY_total, y = NY_murder), color = "blue") +
+  geom_point(aes(x = NY_total, y = pred), color = "red")
+```
+
+In terms of model, it shows a relatively strong correlation between the total number of shootings and the number of murders with $R^2$ value of 0.7472. Also, at the lower numbers, there is a stronger correlation as we can see from the linear regression. However, as the total shootings increases, the model becomes less reliable.
+
+## Conclusion
+
+In conclusion, there seems to be a correlation between the shootings and the statistical murder flag from the data.
+
+In terms of bias, there could ye a bias on the classification of the statistical murder flag when classifying the nature of the shooting. Hence, this might affect the prediction of the model.
